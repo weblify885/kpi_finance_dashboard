@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 // PapaParse will be loaded from a CDN, so the static import is removed.
 // import Papa from 'papaparse'; 
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
+import { XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { ArrowUp, ArrowDown, TrendingUp, DollarSign, Users, ShoppingCart, Briefcase, Clock, Target, Activity, ShieldCheck, FileText, BarChart2 } from 'lucide-react';
 
 // --- UTILITY: KPI CALCULATION LOGIC ---
@@ -26,7 +26,7 @@ const kpiCalculations = {
     const netIncome = kpiCalculations.getValue(data, 'Net Income');
     
     const mrr = revenue / 12;
-    const prevMrr = prevRevenue / 12;
+    //const prevMrr = prevRevenue / 12;
     const arr = revenue;
     
     const grossProfitMargin = (revenue > 0) ? ((revenue - cogs) / revenue) * 100 : 0;
@@ -64,7 +64,7 @@ const kpiCalculations = {
     const currentLiabilities = kpiCalculations.getValue(data, 'Total Liabilities'); // Simplified
     const cash = kpiCalculations.getValue(data, 'Cash');
     const ar = kpiCalculations.getValue(data, 'Accounts Receivable');
-    const inventory = kpiCalculations.getValue(data, 'Inventory');
+    //const inventory = kpiCalculations.getValue(data, 'Inventory');
     const totalLiabilities = kpiCalculations.getValue(data, 'Total Liabilities');
     const equity = kpiCalculations.getValue(data, 'Shareholder Equity');
     const revenue = kpiCalculations.getValue(data, 'Total Revenue');
