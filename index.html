@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Momentum KPI Dashboard</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- PapaParse for CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    
+    <!-- Chart.js for data visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        .dropzone-active {
+            border-color: #4f46e5; /* indigo-600 */
+            background-color: #eef2ff; /* indigo-50 */
+        }
+        body {
+            font-family: sans-serif;
+            background-color: #f9fafb; /* Fallback color */
+            background-image: linear-gradient(180deg, #f9fafb 0%, #ffffff 100%);
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <header class="text-center mb-12">
+            <h1 class="text-5xl font-extrabold text-gray-900">
+                Momentum <span class="text-indigo-600">Financial Dashboard</span>
+            </h1>
+            <p class="mt-4 max-w-2xl mx-auto text-xl text-gray-500">
+                Instantly generate a professional financial dashboard from your accounting data.
+            </p>
+        </header>
+
+        <main class="max-w-5xl mx-auto">
+            <div id="main-content" class="bg-white p-8 rounded-2xl shadow-lg border border-gray-100">
+                
+                <!-- Uploader Section -->
+                <div id="uploader-section">
+                    <!-- Content will be injected by JS -->
+                </div>
+
+                <!-- Loading Section -->
+                <div id="loading-section" class="hidden text-center py-12">
+                    <svg class="animate-spin mx-auto h-12 w-12 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="mt-4 text-lg font-medium text-gray-700">Generating your dashboard...</p>
+                </div>
+
+                <!-- Results Section -->
+                <div id="results-section" class="hidden w-full">
+                    <!-- Results will be injected here by JS -->
+                </div>
+                
+                <p id="error-message" class="mt-4 text-center text-red-500 font-medium"></p>
+            </div>
+        </main>
+        
+        <footer class="text-center mt-16 text-sm text-gray-400">
+            <p>A portfolio project by a Gemini developer.</p>
+            <p>This tool processes data locally in your browser. No data is sent to any server.</p>
+        </footer>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- STATE MANAGEMENT ---
+            let state = {
+                fileData: null,
+                industry: '',
+                additionalInputs: {},
+                anomalies: null,
+                isLoading: false,
+            };
+
+            // --- ELEMENT REFERENCES ---
+            const uploaderSection = document.getElementById('uploader-section');
+            const loadingSection = document.getElementById('loading-section');
+            const resultsSection = document.getElementById('results-section');
+            const errorMessage = document.getElementById('error-message');
+            
+            // --- KPI CALCULATION LOGIC ---
+            const kpiCalculations = {
+              getValue: (data, key, period = 'current') => {
+                const row = data.find(r => r['Metric']?.toLowerCase().trim() === key.toLowerCase());
+                const value = row ? parseFloat(row[period]?.replace(/[^0-9.-]+/g, "")) : 0;
+                return isNaN(value) ? 0 : value;
+              },
+              startup: (data, inputs) => {
+                const revenue = kpiCalculations.getValue(data, 'Total Revenue');
+                const prevRevenue = kpiCalculations.getValue(data, 'Total Revenue', 'previous');
+                const cogs = kpiCalculations.getValue(data, 'Cost of Goods Sold (COGS)');
+                const netIncome = kpiCalculations.getValue(data, 'Net Income');
+                const { newCustomers, churnedCustomers, totalCustomersStart, avgMonthlyBurn } = inputs;
+                const mrr = revenue / 12;
+                const arr = revenue;
+                const grossProfitMargin = (revenue > 0) ? ((revenue - cogs) / revenue) * 100 : 0;
+                const netProfitMargin = (revenue > 0) ? (netIncome / revenue) * 100 : 0;
+                const growthRate = (prevRevenue > 0) ? ((revenue - prevRevenue) / prevRevenue) * 100 : 0;
+                const ruleOf40 = growthRate + netProfitMargin;
+                const cash = kpiCalculations.getValue(data, 'Cash');
+                const cashRunway = (avgMonthlyBurn > 0) ? cash / avgMonthlyBurn : 0;
+                return [
+                  { id: 'arr', title: 'Annual Recurring Revenue', value: arr, unit: '$', trend: arr - prevRevenue, info: 'The predictable revenue a company can expect to receive every year.', benchmark: 'Directly reflects annual growth.' },
+                  { id: 'gpm', title: 'Gross Profit Margin', value: grossProfitMargin, unit: '%', info: 'Profitability after the cost of services. High margin is crucial for SaaS.', benchmark: 'Aim for >75%.' },
+                  { id: 'rule_40', title: 'Rule of 40', value: ruleOf40, unit: '%', info: 'A key SaaS health metric. (Growth Rate + Profit Margin).', benchmark: 'Healthy SaaS companies should exceed 40%.' },
+                  { id: 'runway', title: 'Cash Runway', value: cashRunway, unit: ' months', info: 'How many months the company can operate before running out of money.', benchmark: 'Typically aim for 12-18 months post-funding.' },
+                ];
+              },
+              financial_health: (data) => {
+                const currentAssets = kpiCalculations.getValue(data, 'Total Assets');
+                const currentLiabilities = kpiCalculations.getValue(data, 'Total Liabilities');
+                const cash = kpiCalculations.getValue(data, 'Cash');
+                const ar = kpiCalculations.getValue(data, 'Accounts Receivable');
+                const totalLiabilities = kpiCalculations.getValue(data, 'Total Liabilities');
+                const equity = kpiCalculations.getValue(data, 'Shareholder Equity');
+                const revenue = kpiCalculations.getValue(data, 'Total Revenue');
+                const netIncome = kpiCalculations.getValue(data, 'Net Income');
+                const currentRatio = (currentLiabilities > 0) ? currentAssets / currentLiabilities : 0;
+                const quickRatio = (currentLiabilities > 0) ? (cash + ar) / currentLiabilities : 0;
+                const debtToEquity = (equity > 0) ? totalLiabilities / equity : 0;
+                const workingCapital = currentAssets - currentLiabilities;
+                const netProfitMargin = (revenue > 0) ? (netIncome / revenue) * 100 : 0;
+                return [
+                    { id: 'current_ratio', title: 'Current Ratio', value: currentRatio, unit: ':1', info: 'Measures ability to pay short-term obligations.', benchmark: 'A ratio between 1.5 and 2 is generally considered healthy.' },
+                    { id: 'quick_ratio', title: 'Quick Ratio (Acid Test)', value: quickRatio, unit: ':1', info: 'A stricter liquidity test, excluding inventory.', benchmark: 'A ratio of 1:1 or higher is desirable.' },
+                    { id: 'debt_equity', title: 'Debt-to-Equity Ratio', value: debtToEquity, unit: ':1', info: 'Indicates how much debt a company is using to finance its assets.', benchmark: 'Varies by industry, but lower is often less risky.' },
+                    { id: 'working_capital', title: 'Working Capital', value: workingCapital, unit: '$', info: 'The capital available for day-to-day operations.', benchmark: 'Positive working capital is essential for operational liquidity.' },
+                    { id: 'net_profit_margin', title: 'Net Profit Margin', value: netProfitMargin, unit: '%', info: 'The ultimate measure of profitability after all expenses.', benchmark: 'A margin >10% is generally considered good.' },
+                ];
+              },
+              ecommerce: (data, inputs) => {
+                const revenue = kpiCalculations.getValue(data, 'Total Revenue');
+                const prevRevenue = kpiCalculations.getValue(data, 'Total Revenue', 'previous');
+                const cogs = kpiCalculations.getValue(data, 'Cost of Goods Sold (COGS)');
+                const marketingCost = kpiCalculations.getValue(data, 'Marketing Expenses');
+                const { totalOrders, websiteVisitors, abandonedCarts, totalCarts } = inputs;
+                const aov = (totalOrders > 0) ? revenue / totalOrders : 0;
+                const prevAov = (inputs.prevTotalOrders > 0) ? prevRevenue / inputs.prevTotalOrders : 0;
+                const conversionRate = (websiteVisitors > 0) ? (totalOrders / websiteVisitors) * 100 : 0;
+                const cartAbandonmentRate = (totalCarts > 0) ? (abandonedCarts / totalCarts) * 100 : 0;
+                const grossProfitMargin = (revenue > 0) ? ((revenue - cogs) / revenue) * 100 : 0;
+                const roas = (marketingCost > 0) ? revenue / marketingCost : 0;
+                return [
+                  { id: 'aov', title: 'Average Order Value', value: aov, unit: '$', trend: aov - prevAov, info: 'The average amount spent each time a customer places an order.', benchmark: 'Increasing AOV boosts revenue without new traffic.' },
+                  { id: 'conversion', title: 'Conversion Rate', value: conversionRate, unit: '%', info: 'The percentage of website visitors who make a purchase.', benchmark: 'A good rate is typically 2-3%.' },
+                  { id: 'cart_abandon', title: 'Cart Abandonment Rate', value: cartAbandonmentRate, unit: '%', info: 'The percentage of shoppers who add items to a cart but leave without completing the purchase.', benchmark: 'Average is ~70%. Aim lower.' },
+                  { id: 'gpm', title: 'Gross Profit Margin', value: grossProfitMargin, unit: '%', info: 'The percentage of revenue left after subtracting the cost of goods sold.', benchmark: 'Varies by product type, but higher is better.' },
+                  { id: 'roas', title: 'Return on Ad Spend', value: roas, unit: ':1', info: 'Measures the gross revenue generated for every dollar spent on advertising.', benchmark: 'A common target is 4:1.' },
+                ];
+              },
+            };
+            
+            // --- UI RENDERING & LOGIC ---
+            const iconMap = {
+                startup: { arr: 'trending-up', gpm: 'dollar-sign', ltv_cac: 'target', churn: 'users', rule_40: 'activity', runway: 'clock', cac: 'target' },
+                ecommerce: { aov: 'shopping-cart', conversion: 'target', cart_abandon: 'shopping-cart', gpm: 'dollar-sign', roas: 'trending-up' },
+                financial_health: { current_ratio: 'activity', quick_ratio: 'shield-check', debt_equity: 'bar-chart-2', working_capital: 'briefcase', net_profit_margin: 'file-text' },
+            };
+            
+            const formatValue = (val) => {
+                if (val === Infinity || isNaN(val)) return 'N/A';
+                return val.toLocaleString('en-US', { maximumFractionDigits: 2 });
+            };
+
+            const renderUploader = () => {
+                const industryNameMap = {
+                    startup: 'Venture-Backed Startup',
+                    ecommerce: 'E-commerce',
+                };
+                const commonInputClass = "mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm";
+                
+                const startupInputsHTML = `
+                    <label class="block text-sm font-medium text-gray-700">New Customers</label>
+                    <input type="number" name="newCustomers" class="${commonInputClass}" placeholder="e.g., 50" />
+                    <label class="block text-sm font-medium text-gray-700 mt-4">Churned Customers</label>
+                    <input type="number" name="churnedCustomers" class="${commonInputClass}" placeholder="e.g., 5" />
+                    <label class="block text-sm font-medium text-gray-700 mt-4">Total Customers (Start of Period)</label>
+                    <input type="number" name="totalCustomersStart" class="${commonInputClass}" placeholder="e.g., 500" />
+                    <label class="block text-sm font-medium text-gray-700 mt-4">Average Monthly Burn</label>
+                    <input type="number" name="avgMonthlyBurn" class="${commonInputClass}" placeholder="e.g., 50000" />
+                `;
+                const ecommerceInputsHTML = `
+                    <label class="block text-sm font-medium text-gray-700">Total Orders</label>
+                    <input type="number" name="totalOrders" class="${commonInputClass}" placeholder="e.g., 1200" />
+                    <label class="block text-sm font-medium text-gray-700 mt-4">Website Visitors</label>
+                    <input type="number" name="websiteVisitors" class="${commonInputClass}" placeholder="e.g., 40000" />
+                    <label class="block text-sm font-medium text-gray-700 mt-4">Total Carts Created</label>
+                    <input type="number" name="totalCarts" class="${commonInputClass}" placeholder="e.g., 4000" />
+                    <label class="block text-sm font-medium text-gray-700 mt-4">Abandoned Carts</label>
+                    <input type="number" name="abandonedCarts" class="${commonInputClass}" placeholder="e.g., 2800" />
+                `;
+
+                const industrySpecificInputsHTML = state.industry && state.industry !== 'financial_health' ? `
+                    <div class="mt-6 p-4 bg-gray-50 rounded-lg border">
+                        <h3 class="text-lg font-medium text-gray-900 mb-4">Enter Additional Data for <span class="capitalize text-indigo-600">${industryNameMap[state.industry]}</span></h3>
+                        <div id="additional-inputs-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                           ${state.industry === 'startup' ? startupInputsHTML : ''}
+                           ${state.industry === 'ecommerce' ? ecommerceInputsHTML : ''}
+                        </div>
+                    </div>
+                ` : '';
+
+                const uploaderHTML = `
+                    <div class="w-full max-w-4xl mx-auto">
+                        <div class="mb-6">
+                            <label for="industry" class="block text-lg font-medium text-gray-700 mb-2">1. Select Analysis Type</label>
+                            <select id="industry-select" class="mt-1 block w-full pl-3 pr-10 py-3 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm">
+                                <option value="">-- Choose an analysis type --</option>
+                                <option value="financial_health" ${state.industry === 'financial_health' ? 'selected' : ''}>Core Financial Health</option>
+                                <option value="startup" ${state.industry === 'startup' ? 'selected' : ''}>Venture-Backed Startup (SaaS)</option>
+                                <option value="ecommerce" ${state.industry === 'ecommerce' ? 'selected' : ''}>E-commerce</option>
+                            </select>
+                        </div>
+                        <div id="file-upload-area" class="${state.industry ? '' : 'hidden'}">
+                            <label class="block text-lg font-medium text-gray-700 mb-2">2. Upload Your Financial Data</label>
+                            <div id="dropzone" class="mt-2 flex justify-center px-6 pt-10 pb-12 border-2 border-gray-300 border-dashed rounded-md cursor-pointer transition-colors duration-300">
+                                <div class="space-y-1 text-center">
+                                    <i data-lucide="file-text" class="mx-auto h-12 w-12 text-gray-400"></i>
+                                    <div class="flex text-sm text-gray-600 justify-center">
+                                        <p class="pl-1">Drag & drop a CSV file here, or click to select</p>
+                                        <input id="file-input" type="file" accept=".csv" class="sr-only" />
+                                    </div>
+                                    <p class="text-xs text-gray-500">Must be a CSV with a 'Metric' column. <a href="https://gist.githubusercontent.com/best-portfolio/8d94351add238768a26e0889c177341b/raw/f7a07c1345d315993b6883f05452efa179b99650/sample-financial-data.csv" target="_blank" rel="noopener noreferrer" class="text-indigo-600 hover:underline">Download sample</a></p>
+                                </div>
+                            </div>
+                            <div id="file-name-display" class="mt-2 text-sm text-gray-600"></div>
+                            ${industrySpecificInputsHTML}
+                            <div class="mt-8 text-center">
+                                <button id="generate-btn" class="inline-flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-300 disabled:cursor-not-allowed" disabled>
+                                    Generate Dashboard
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                uploaderSection.innerHTML = uploaderHTML;
+                lucide.createIcons();
+                addUploaderEventListeners();
+            };
+
+            const renderDashboard = (kpis) => {
+                const industryNameMap = {
+                    startup: 'Venture-Backed Startup',
+                    ecommerce: 'E-commerce',
+                    financial_health: 'Core Financial Health'
+                };
+                const kpiCardHTML = (kpi) => {
+                    const isPositive = kpi.trend >= 0;
+                    const trendHTML = kpi.trend !== undefined && !isNaN(kpi.trend) ? `
+                        <div class="flex items-center text-sm ${isPositive ? 'text-green-500' : 'text-red-500'}">
+                            <i data-lucide="${isPositive ? 'arrow-up' : 'arrow-down'}" class="h-4 w-4"></i>
+                            <span class="font-semibold ml-1">${formatValue(Math.abs(kpi.trend))} ${kpi.unit}</span>
+                            <span class="text-gray-400 ml-1">vs prev. period</span>
+                        </div>` : '';
+
+                    return `
+                        <div class="bg-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-300 border border-gray-100 flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <h3 class="text-sm font-semibold text-gray-500">${kpi.title}</h3>
+                                    <i data-lucide="${iconMap[state.industry][kpi.id] || 'dollar-sign'}" class="text-indigo-500 h-6 w-6"></i>
+                                </div>
+                                <p class="text-4xl font-bold text-gray-800">
+                                    ${kpi.unit === '$' ? formatValue(kpi.value) : ''}
+                                    ${kpi.unit !== '$' ? formatValue(kpi.value) : ''}
+                                    <span class="text-2xl font-medium text-gray-500">${kpi.unit !== '$' ? kpi.unit : ''}</span>
+                                </p>
+                            </div>
+                            <div class="mt-4">
+                                ${trendHTML}
+                                <p class="text-xs text-gray-400 mt-2">${kpi.info}</p>
+                            </div>
+                        </div>`;
+                };
+
+                const dashboardHTML = `
+                    <div class="animate-fade-in">
+                        <h2 class="text-3xl font-bold text-gray-900 mb-8">Your <span class="capitalize text-indigo-600">${industryNameMap[state.industry]}</span> Dashboard</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                            ${kpis.map(kpiCardHTML).join('')}
+                        </div>
+                        <div class="mt-12 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <div class="bg-white p-6 rounded-2xl shadow-lg border border-gray-100">
+                                <h3 class="text-lg font-semibold text-gray-700 mb-4">Key Metrics Overview</h3>
+                                <canvas id="bar-chart"></canvas>
+                            </div>
+                            <div class="bg-white p-6 rounded-2xl shadow-lg border border-gray-100">
+                                <h3 class="text-lg font-semibold text-gray-700 mb-4">Composition Analysis</h3>
+                                <canvas id="pie-chart"></canvas>
+                            </div>
+                        </div>
+                        <div class="mt-8 text-center">
+                            <button id="reset-button" class="px-6 py-2 border border-gray-300 text-base font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                              Start Over
+                            </button>
+                        </div>
+                    </div>`;
+                
+                resultsSection.innerHTML = dashboardHTML;
+                lucide.createIcons();
+                document.getElementById('reset-button').addEventListener('click', handleReset);
+                renderCharts(kpis);
+            };
+
+            const renderCharts = (kpis) => {
+                const barCtx = document.getElementById('bar-chart').getContext('2d');
+                new Chart(barCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: kpis.map(k => k.title),
+                        datasets: [{
+                            label: 'Value',
+                            data: kpis.map(k => k.value),
+                            backgroundColor: 'rgba(79, 70, 229, 0.8)',
+                            borderColor: 'rgba(79, 70, 229, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+
+                let pieData, pieLabels;
+                 if (state.industry === 'startup') {
+                    pieLabels = ['Rule of 40', 'Remainder'];
+                    const ruleOf40 = kpis.find(k => k.id === 'rule_40')?.value || 0;
+                    pieData = [ruleOf40, 100 - ruleOf40];
+                } else if (state.industry === 'ecommerce') {
+                    pieLabels = ['Conversion Rate', 'Non-Conversion'];
+                    const convRate = kpis.find(k => k.id === 'conversion')?.value || 0;
+                    pieData = [convRate, 100 - convRate];
+                } else if (state.industry === 'financial_health') {
+                    pieLabels = ['Debt', 'Equity'];
+                    const debtEquityRatio = kpis.find(k => k.id === 'debt_equity')?.value || 0;
+                    pieData = [debtEquityRatio, 1];
+                }
+
+                const pieCtx = document.getElementById('pie-chart').getContext('2d');
+                new Chart(pieCtx, {
+                    type: 'pie',
+                    data: {
+                        labels: pieLabels,
+                        datasets: [{
+                            data: pieData,
+                            backgroundColor: ['#8884d8', '#82ca9d', '#FFBB28', '#FF8042', '#0088FE'],
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            };
+
+            const handleFileUpload = (file) => {
+                clearError();
+                if (!file) return;
+
+                Papa.parse(file, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: (results) => {
+                        const data = results.data;
+                        if (data.length === 0 || !data[0]['Metric']) {
+                            showError('Invalid CSV. Ensure it has a "Metric" column.');
+                            return;
+                        }
+                        state.fileData = data;
+                        document.getElementById('file-name-display').textContent = `File loaded: ${file.name}`;
+                        document.getElementById('generate-btn').disabled = false;
+                    },
+                    error: (err) => showError("Failed to parse the CSV file.")
+                });
+            };
+
+            const handleGenerate = () => {
+                if (!state.fileData || !state.industry) {
+                    showError('Please select an industry and upload a file first.');
+                    return;
+                }
+                
+                const inputsContainer = document.getElementById('additional-inputs-container');
+                if (inputsContainer) {
+                    const inputs = inputsContainer.querySelectorAll('input');
+                    inputs.forEach(input => {
+                        state.additionalInputs[input.name] = parseFloat(input.value) || 0;
+                    });
+                }
+                
+                uploaderSection.classList.add('hidden');
+                loadingSection.classList.remove('hidden');
+
+                setTimeout(() => {
+                    const calculationFn = kpiCalculations[state.industry];
+                    const results = calculationFn(state.fileData, state.additionalInputs);
+                    renderDashboard(results);
+                    loadingSection.classList.add('hidden');
+                    resultsSection.classList.remove('hidden');
+                }, 1500);
+            };
+
+            const handleReset = () => {
+                state = { fileData: null, industry: '', additionalInputs: {}, anomalies: null, isLoading: false };
+                resultsSection.classList.add('hidden');
+                resultsSection.innerHTML = '';
+                uploaderSection.classList.remove('hidden');
+                renderUploader();
+                clearError();
+            };
+
+            const addUploaderEventListeners = () => {
+                const industrySelect = document.getElementById('industry-select');
+                const fileUploadArea = document.getElementById('file-upload-area');
+                const dropzone = document.getElementById('dropzone');
+                const fileInput = document.getElementById('file-input');
+                const generateBtn = document.getElementById('generate-btn');
+
+                industrySelect.addEventListener('change', (e) => {
+                    state.industry = e.target.value;
+                    state.fileData = null; // Reset file on industry change
+                    renderUploader();
+                });
+
+                if (dropzone) {
+                    dropzone.addEventListener('click', () => fileInput.click());
+                    fileInput.addEventListener('change', (e) => handleFileUpload(e.target.files[0]));
+                    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dropzone-active'); });
+                    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dropzone-active'));
+                    dropzone.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        dropzone.classList.remove('dropzone-active');
+                        if (e.dataTransfer.files.length > 0) handleFileUpload(e.dataTransfer.files[0]);
+                    });
+                }
+                
+                if (generateBtn) {
+                   generateBtn.addEventListener('click', handleGenerate);
+                }
+            };
+
+            const showError = (message) => errorMessage.textContent = message;
+            const clearError = () => errorMessage.textContent = '';
+            
+            // --- INITIAL RENDER ---
+            renderUploader();
+        });
+    </script>
+</body>
+</html>
